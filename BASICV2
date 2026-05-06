@@ -1,0 +1,1211 @@
+local player = game:GetService("Players").LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local userInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Camera = workspace.CurrentCamera
+local TweenService = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+
+local isMobile = UIS.TouchEnabled
+local perfectShootEnabled = false
+local aimKillEnabled = false
+local espEnabled = false
+local autoShootEnabled = false
+local hitboxEnabled = false
+local hitboxSize = 5
+local mt = nil
+local oldIndex = nil
+local highlightObjects = {}
+local autoShootLastTime = 0
+local autoShootDelay = 0.05
+local localTeamCache = nil
+local affectedPlayers = {}
+local originalHitboxSizes = {}
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DANHUB"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local button = Instance.new("ImageButton")
+button.Name = "DraggableButton"
+button.Size = UDim2.new(0, 50, 0, 50)
+button.Position = UDim2.new(1, -65, 0, 15)
+button.BackgroundTransparency = 1
+button.Image = "rbxassetid://78192826150107"
+button.ImageColor3 = Color3.fromRGB(190, 90, 255)
+button.AutoButtonColor = false
+button.Parent = screenGui
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(1, 0)
+btnCorner.Parent = button
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Thickness = 2.5
+btnStroke.Color = Color3.fromRGB(255, 100, 255)
+btnStroke.Transparency = 0.2
+btnStroke.Parent = button
+
+local btnGradient = Instance.new("UIGradient")
+btnGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 50, 200)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 80, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(140, 50, 220))
+}
+btnGradient.Parent = btnStroke
+
+local btnGlow = Instance.new("ImageLabel")
+btnGlow.Size = UDim2.new(1.5, 0, 1.5, 0)
+btnGlow.Position = UDim2.new(-0.25, 0, -0.25, 0)
+btnGlow.BackgroundTransparency = 1
+btnGlow.Image = "rbxassetid://13135718668"
+btnGlow.ImageColor3 = Color3.fromRGB(255, 100, 255)
+btnGlow.ImageTransparency = 0.5
+btnGlow.ZIndex = 0
+btnGlow.Parent = button
+
+local menu = Instance.new("Frame")
+menu.Name = "MenuPopup"
+menu.Size = UDim2.new(0, 240, 0, 340)
+menu.BackgroundColor3 = Color3.fromRGB(25, 20, 40)
+menu.BackgroundTransparency = 0.03
+menu.Visible = false
+menu.ClipsDescendants = true
+menu.Parent = screenGui
+
+local menuCorner = Instance.new("UICorner")
+menuCorner.CornerRadius = UDim.new(0, 10)
+menuCorner.Parent = menu
+
+local menuStroke = Instance.new("UIStroke")
+menuStroke.Thickness = 1.5
+menuStroke.Color = Color3.fromRGB(180, 80, 255)
+menuStroke.Transparency = 0.15
+menuStroke.Parent = menu
+
+local menuGradient = Instance.new("UIGradient")
+menuGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 80, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(160, 70, 220)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(140, 50, 200))
+}
+menuGradient.Parent = menuStroke
+
+local borderContainer = Instance.new("Frame")
+borderContainer.Size = UDim2.new(1, 0, 1, 0)
+borderContainer.BackgroundTransparency = 1
+borderContainer.ZIndex = 10
+borderContainer.Parent = menu
+
+local borderTop = Instance.new("Frame")
+borderTop.Size = UDim2.new(1, 0, 0, 1.5)
+borderTop.BackgroundColor3 = Color3.fromRGB(200, 100, 255)
+borderTop.BorderSizePixel = 0
+borderTop.Parent = borderContainer
+
+local borderTopGrad = Instance.new("UIGradient")
+borderTopGrad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 50, 200)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 100, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 50, 255))
+}
+borderTopGrad.Parent = borderTop
+
+local borderBottom = Instance.new("Frame")
+borderBottom.Size = UDim2.new(1, 0, 0, 1.5)
+borderBottom.Position = UDim2.new(0, 0, 1, -1.5)
+borderBottom.BackgroundColor3 = Color3.fromRGB(200, 100, 255)
+borderBottom.BorderSizePixel = 0
+borderBottom.Parent = borderContainer
+
+local borderBottomGrad = Instance.new("UIGradient")
+borderBottomGrad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 50, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 100, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 50, 200))
+}
+borderBottomGrad.Parent = borderBottom
+
+local borderLeft = Instance.new("Frame")
+borderLeft.Size = UDim2.new(0, 1.5, 1, 0)
+borderLeft.BackgroundColor3 = Color3.fromRGB(200, 100, 255)
+borderLeft.BorderSizePixel = 0
+borderLeft.Parent = borderContainer
+
+local borderLeftGrad = Instance.new("UIGradient")
+borderLeftGrad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 100, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 50, 255))
+}
+borderLeftGrad.Rotation = 90
+borderLeftGrad.Parent = borderLeft
+
+local borderRight = Instance.new("Frame")
+borderRight.Size = UDim2.new(0, 1.5, 1, 0)
+borderRight.Position = UDim2.new(1, -1.5, 0, 0)
+borderRight.BackgroundColor3 = Color3.fromRGB(200, 100, 255)
+borderRight.BorderSizePixel = 0
+borderRight.Parent = borderContainer
+
+local borderRightGrad = Instance.new("UIGradient")
+borderRightGrad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 50, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 255))
+}
+borderRightGrad.Rotation = 90
+borderRightGrad.Parent = borderRight
+
+local cornerGlows = {}
+for i = 1, 4 do
+    local glow = Instance.new("ImageLabel")
+    glow.Size = UDim2.new(0, 30, 0, 30)
+    glow.BackgroundTransparency = 1
+    glow.Image = "rbxassetid://13135718668"
+    glow.ImageColor3 = Color3.fromRGB(200, 100, 255)
+    glow.ImageTransparency = 0.6
+    glow.ZIndex = 9
+    glow.Parent = borderContainer
+    table.insert(cornerGlows, glow)
+end
+cornerGlows[1].Position = UDim2.new(0, -15, 0, -15)
+cornerGlows[2].Position = UDim2.new(1, -15, 0, -15)
+cornerGlows[3].Position = UDim2.new(0, -15, 1, -15)
+cornerGlows[4].Position = UDim2.new(1, -15, 1, -15)
+
+local particlesContainer = Instance.new("Frame")
+particlesContainer.Size = UDim2.new(1, 0, 1, 0)
+particlesContainer.BackgroundTransparency = 1
+particlesContainer.ZIndex = 8
+particlesContainer.Parent = menu
+
+local menuParticles = {}
+for i = 1, 8 do
+    local dot = Instance.new("Frame")
+    dot.Size = UDim2.new(0, 3, 0, 3)
+    dot.BackgroundColor3 = Color3.fromRGB(200, 150, 255)
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 8
+    dot.Parent = particlesContainer
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    dotCorner.Parent = dot
+    table.insert(menuParticles, {
+        obj = dot,
+        speed = 0.3 + math.random() * 1.2,
+        offset = math.random() * math.pi * 2,
+        radius = 0.25 + math.random() * 0.45,
+        baseY = math.random()
+    })
+end
+
+local scanLine = Instance.new("Frame")
+scanLine.Size = UDim2.new(1, 0, 0, 1)
+scanLine.BackgroundColor3 = Color3.fromRGB(200, 150, 255)
+scanLine.BackgroundTransparency = 0.5
+scanLine.BorderSizePixel = 0
+scanLine.ZIndex = 6
+scanLine.Parent = menu
+
+local topGlow = Instance.new("ImageLabel")
+topGlow.Size = UDim2.new(1, 0, 0, 60)
+topGlow.BackgroundTransparency = 1
+topGlow.Image = "rbxassetid://13135718668"
+topGlow.ImageColor3 = Color3.fromRGB(150, 70, 255)
+topGlow.ImageTransparency = 0.7
+topGlow.ZIndex = 1
+topGlow.Parent = menu
+
+local menuImg = Instance.new("ImageLabel")
+menuImg.Size = UDim2.new(0, 35, 0, 35)
+menuImg.Position = UDim2.new(0.5, -17.5, 0, 8)
+menuImg.BackgroundTransparency = 1
+menuImg.Image = "rbxassetid://78192826150107"
+menuImg.ImageColor3 = Color3.fromRGB(200, 100, 255)
+menuImg.ZIndex = 15
+menuImg.Parent = menu
+
+local imgCorner = Instance.new("UICorner")
+imgCorner.CornerRadius = UDim.new(1, 0)
+imgCorner.Parent = menuImg
+
+local imgGlow = Instance.new("ImageLabel")
+imgGlow.Size = UDim2.new(1.8, 0, 1.8, 0)
+imgGlow.Position = UDim2.new(-0.4, 0, -0.4, 0)
+imgGlow.BackgroundTransparency = 1
+imgGlow.Image = "rbxassetid://13135718668"
+imgGlow.ImageColor3 = Color3.fromRGB(200, 100, 255)
+imgGlow.ImageTransparency = 0.55
+imgGlow.ZIndex = 14
+imgGlow.Parent = menuImg
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 38)
+header.Position = UDim2.new(0, 0, 0, 48)
+header.BackgroundColor3 = Color3.fromRGB(170, 65, 250)
+header.ZIndex = 15
+header.Parent = menu
+
+local headerCorner = Instance.new("UICorner")
+headerCorner.CornerRadius = UDim.new(0, 10)
+headerCorner.Parent = header
+
+local headerGlow = Instance.new("ImageLabel")
+headerGlow.Size = UDim2.new(1.15, 0, 1.5, 0)
+headerGlow.Position = UDim2.new(-0.075, 0, -0.25, 0)
+headerGlow.BackgroundTransparency = 1
+headerGlow.Image = "rbxassetid://13135718668"
+headerGlow.ImageColor3 = Color3.fromRGB(170, 65, 250)
+headerGlow.ImageTransparency = 0.55
+headerGlow.ZIndex = 14
+headerGlow.Parent = header
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -8, 1, 0)
+title.Position = UDim2.new(0, 4, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "JOS1K"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 13
+title.Font = Enum.Font.GothamBold
+title.TextStrokeTransparency = 0.3
+title.TextStrokeColor3 = Color3.fromRGB(255, 0, 255)
+title.ZIndex = 16
+title.Parent = header
+
+local separatorLine = Instance.new("Frame")
+separatorLine.Size = UDim2.new(0.9, 0, 0, 1)
+separatorLine.Position = UDim2.new(0.05, 0, 0, 90)
+separatorLine.BackgroundColor3 = Color3.fromRGB(180, 80, 255)
+separatorLine.BackgroundTransparency = 0.5
+separatorLine.BorderSizePixel = 0
+separatorLine.ZIndex = 12
+separatorLine.Parent = menu
+
+local function animateButton(btn, isActive)
+    local originalSize = btn.Size
+    local scaleSize = UDim2.new(originalSize.X.Scale, originalSize.X.Offset, originalSize.Y.Scale, originalSize.Y.Offset * 0.93)
+    local tween1 = TweenService:Create(btn, TweenInfo.new(0.06, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = scaleSize})
+    tween1:Play()
+    tween1.Completed:Connect(function()
+        local tween2 = TweenService:Create(btn, TweenInfo.new(0.06, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {Size = originalSize})
+        tween2:Play()
+    end)
+end
+
+local function createToggle(text, yPos)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.9, 0, 0, 32)
+    btn.Position = UDim2.new(0.05, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+    btn.Text = "  " .. text .. "  OFF"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 11
+    btn.Font = Enum.Font.GothamBold
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.ZIndex = 12
+    btn.AutoButtonColor = false
+    btn.Parent = menu
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 7)
+    corner.Parent = btn
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(180, 90, 255)
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.25
+    stroke.Parent = btn
+    
+    local btnGlowImg = Instance.new("ImageLabel")
+    btnGlowImg.Size = UDim2.new(1.06, 0, 1.4, 0)
+    btnGlowImg.Position = UDim2.new(-0.03, 0, -0.2, 0)
+    btnGlowImg.BackgroundTransparency = 1
+    btnGlowImg.Image = "rbxassetid://13135718668"
+    btnGlowImg.ImageColor3 = Color3.fromRGB(180, 100, 255)
+    btnGlowImg.ImageTransparency = 0.8
+    btnGlowImg.ZIndex = 11
+    btnGlowImg.Visible = false
+    btnGlowImg.Parent = btn
+    
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(110, 80, 160)}):Play()
+        btnGlowImg.Visible = true
+        TweenService:Create(btnGlowImg, TweenInfo.new(0.2), {ImageTransparency = 0.45}):Play()
+    end)
+    
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(90, 60, 140)}):Play()
+        TweenService:Create(btnGlowImg, TweenInfo.new(0.2), {ImageTransparency = 0.8}):Play()
+        task.wait(0.2)
+        btnGlowImg.Visible = false
+    end)
+    
+    return btn, stroke
+end
+
+local perfectShootBtn, psStroke = createToggle("PERFECT SHOOT", 95)
+local autoShootBtn, asStroke = createToggle("AUTO SHOOT", 132)
+local espBtn, espStroke = createToggle("CHAMS ESP", 169)
+local aimKillBtn, akStroke = createToggle("AIM KILL", 206)
+
+local hitboxFrame = Instance.new("Frame")
+hitboxFrame.Size = UDim2.new(0.9, 0, 0, 80)
+hitboxFrame.Position = UDim2.new(0.05, 0, 0, 243)
+hitboxFrame.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+hitboxFrame.BackgroundTransparency = 0.35
+hitboxFrame.ZIndex = 12
+hitboxFrame.Parent = menu
+
+local hitboxCorner = Instance.new("UICorner")
+hitboxCorner.CornerRadius = UDim.new(0, 7)
+hitboxCorner.Parent = hitboxFrame
+
+local hitboxStroke = Instance.new("UIStroke")
+hitboxStroke.Color = Color3.fromRGB(180, 90, 255)
+hitboxStroke.Thickness = 1.5
+hitboxStroke.Transparency = 0.25
+hitboxStroke.Parent = hitboxFrame
+
+local hitboxTitle = Instance.new("TextLabel")
+hitboxTitle.Size = UDim2.new(0.9, 0, 0, 14)
+hitboxTitle.Position = UDim2.new(0.05, 0, 0, 3)
+hitboxTitle.BackgroundTransparency = 1
+hitboxTitle.Text = "HITBOX EXPANDER"
+hitboxTitle.TextColor3 = Color3.fromRGB(200, 180, 255)
+hitboxTitle.TextSize = 9
+hitboxTitle.Font = Enum.Font.GothamBold
+hitboxTitle.ZIndex = 13
+hitboxTitle.Parent = hitboxFrame
+
+local hitboxBtn = Instance.new("TextButton")
+hitboxBtn.Size = UDim2.new(0.45, 0, 0, 24)
+hitboxBtn.Position = UDim2.new(0.03, 0, 0, 20)
+hitboxBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+hitboxBtn.Text = " OFF"
+hitboxBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+hitboxBtn.TextSize = 10
+hitboxBtn.Font = Enum.Font.GothamBold
+hitboxBtn.ZIndex = 13
+hitboxBtn.AutoButtonColor = false
+hitboxBtn.Parent = hitboxFrame
+
+local hitboxBtnCorner = Instance.new("UICorner")
+hitboxBtnCorner.CornerRadius = UDim.new(0, 5)
+hitboxBtnCorner.Parent = hitboxBtn
+
+local hitboxValueInput = Instance.new("TextBox")
+hitboxValueInput.Size = UDim2.new(0.45, 0, 0, 24)
+hitboxValueInput.Position = UDim2.new(0.52, 0, 0, 20)
+hitboxValueInput.BackgroundColor3 = Color3.fromRGB(50, 40, 70)
+hitboxValueInput.Text = tostring(hitboxSize)
+hitboxValueInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+hitboxValueInput.TextSize = 12
+hitboxValueInput.Font = Enum.Font.GothamBold
+hitboxValueInput.PlaceholderText = "1-50"
+hitboxValueInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+hitboxValueInput.ZIndex = 13
+hitboxValueInput.Parent = hitboxFrame
+
+local hitboxInputCorner = Instance.new("UICorner")
+hitboxInputCorner.CornerRadius = UDim.new(0, 5)
+hitboxInputCorner.Parent = hitboxValueInput
+
+local hitboxInputStroke = Instance.new("UIStroke")
+hitboxInputStroke.Color = Color3.fromRGB(0, 180, 255)
+hitboxInputStroke.Thickness = 1.2
+hitboxInputStroke.Transparency = 0.35
+hitboxInputStroke.Parent = hitboxValueInput
+
+local sliderBg = Instance.new("Frame")
+sliderBg.Size = UDim2.new(0.9, 0, 0, 6)
+sliderBg.Position = UDim2.new(0.05, 0, 0, 50)
+sliderBg.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
+sliderBg.BackgroundTransparency = 0.5
+sliderBg.ZIndex = 13
+sliderBg.Parent = hitboxFrame
+
+local sliderCorner = Instance.new("UICorner")
+sliderCorner.CornerRadius = UDim.new(1, 0)
+sliderCorner.Parent = sliderBg
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new((hitboxSize - 1) / 49, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
+sliderFill.ZIndex = 14
+sliderFill.Parent = sliderBg
+
+local sliderCornerFill = Instance.new("UICorner")
+sliderCornerFill.CornerRadius = UDim.new(1, 0)
+sliderCornerFill.Parent = sliderFill
+
+local sizeLabel = Instance.new("TextLabel")
+sizeLabel.Size = UDim2.new(0.9, 0, 0, 12)
+sizeLabel.Position = UDim2.new(0.05, 0, 0, 62)
+sizeLabel.BackgroundTransparency = 1
+sizeLabel.Text = "Size: " .. hitboxSize
+sizeLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+sizeLabel.TextSize = 9
+sizeLabel.Font = Enum.Font.Gotham
+sizeLabel.TextXAlignment = Enum.TextXAlignment.Center
+sizeLabel.ZIndex = 13
+sizeLabel.Parent = hitboxFrame
+
+local function storeOriginalHitbox(player)
+    if not originalHitboxSizes[player] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        originalHitboxSizes[player] = {
+            Size = hrp.Size,
+            Transparency = hrp.Transparency,
+            Color = hrp.Color,
+            Material = hrp.Material,
+            CanCollide = hrp.CanCollide
+        }
+    end
+end
+
+local function restoreOriginalHitbox(player)
+    if originalHitboxSizes[player] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        local original = originalHitboxSizes[player]
+        hrp.Size = original.Size
+        hrp.Transparency = original.Transparency
+        hrp.Color = original.Color
+        hrp.Material = original.Material
+        hrp.CanCollide = original.CanCollide
+        originalHitboxSizes[player] = nil
+    end
+end
+
+local function updateHitboxPlayers()
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= player and not table.find(affectedPlayers, v) then
+            if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                table.insert(affectedPlayers, v)
+                if hitboxEnabled then
+                    storeOriginalHitbox(v)
+                end
+            end
+        end
+    end
+    
+    for i = #affectedPlayers, 1, -1 do
+        local v = affectedPlayers[i]
+        if not v.Parent or not v.Character or not v.Character:FindFirstChild("HumanoidRootPart") then
+            if hitboxEnabled then
+                restoreOriginalHitbox(v)
+            end
+            table.remove(affectedPlayers, i)
+        end
+    end
+end
+
+local function applyHitbox()
+    if not hitboxEnabled then return end
+    
+    for _, v in pairs(affectedPlayers) do
+        if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = v.Character.HumanoidRootPart
+            local humanoid = v.Character:FindFirstChild("Humanoid")
+            
+            if humanoid and humanoid.Health > 0 then
+                if not originalHitboxSizes[v] then
+                    storeOriginalHitbox(v)
+                end
+                
+                local newSize = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                if hrp.Size ~= newSize then
+                    hrp.Size = newSize
+                end
+                
+                hrp.Transparency = 0.5
+                hrp.Color = Color3.fromRGB(0, 100, 255)
+                hrp.Material = Enum.Material.Neon
+                hrp.CanCollide = false
+            elseif originalHitboxSizes[v] then
+                restoreOriginalHitbox(v)
+            end
+        end
+    end
+end
+
+local function enableHitbox()
+    if hitboxEnabled then return end
+    hitboxEnabled = true
+    hitboxBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 50)
+    hitboxBtn.Text = " ON"
+    animateButton(hitboxBtn, true)
+    
+    updateHitboxPlayers()
+    
+    for _, v in pairs(affectedPlayers) do
+        storeOriginalHitbox(v)
+    end
+    
+    applyHitbox()
+end
+
+local function disableHitbox()
+    if not hitboxEnabled then return end
+    hitboxEnabled = false
+    hitboxBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+    hitboxBtn.Text = " OFF"
+    animateButton(hitboxBtn, false)
+    
+    for _, v in pairs(affectedPlayers) do
+        restoreOriginalHitbox(v)
+    end
+end
+
+local function setHitboxSize(newSize)
+    local clampedSize = math.clamp(newSize, 1, 50)
+    if hitboxSize == clampedSize then return end
+    
+    hitboxSize = clampedSize
+    sliderFill.Size = UDim2.new((hitboxSize - 1) / 49, 0, 1, 0)
+    hitboxValueInput.Text = tostring(hitboxSize)
+    sizeLabel.Text = "Size: " .. hitboxSize
+    
+    if hitboxEnabled then
+        applyHitbox()
+    end
+end
+
+hitboxBtn.MouseButton1Click:Connect(function()
+    if hitboxEnabled then
+        disableHitbox()
+    else
+        enableHitbox()
+    end
+end)
+
+hitboxValueInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local value = tonumber(hitboxValueInput.Text)
+        if value then
+            setHitboxSize(math.floor(value))
+        else
+            hitboxValueInput.Text = tostring(hitboxSize)
+        end
+    end
+end)
+
+local draggingSlider = false
+sliderBg.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = true
+        local xPos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        local newSize = math.floor(1 + (xPos * 49))
+        setHitboxSize(newSize)
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local xPos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        local newSize = math.floor(1 + (xPos * 49))
+        setHitboxSize(newSize)
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = false
+        dragging = false
+        menuDragging = false
+    end
+end)
+
+local function getLocalTeam()
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return nil end
+    local main = playerGui:FindFirstChild("Main")
+    if not main then return nil end
+    local mainGameFrame = main:FindFirstChild("MainGameFrame")
+    if not mainGameFrame then return nil end
+    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
+    if not playersFrame then return nil end
+    
+    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
+    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
+    
+    if teamRed and teamRed:FindFirstChild(player.Name) then
+        return "Red"
+    elseif teamBlue and teamBlue:FindFirstChild(player.Name) then
+        return "Blue"
+    end
+    return nil
+end
+
+local function refreshLocalTeam()
+    localTeamCache = getLocalTeam()
+    return localTeamCache
+end
+
+local function isEnemy(targetPlayer)
+    if localTeamCache == nil then
+        refreshLocalTeam()
+    end
+    
+    if localTeamCache == nil then return false end
+    
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return false end
+    local main = playerGui:FindFirstChild("Main")
+    if not main then return false end
+    local mainGameFrame = main:FindFirstChild("MainGameFrame")
+    if not mainGameFrame then return false end
+    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
+    if not playersFrame then return false end
+    
+    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
+    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
+    
+    local targetName = targetPlayer.Name
+    
+    if localTeamCache == "Red" then
+        if teamBlue and teamBlue:FindFirstChild(targetName) then
+            return true
+        end
+    elseif localTeamCache == "Blue" then
+        if teamRed and teamRed:FindFirstChild(targetName) then
+            return true
+        end
+    end
+    
+    return false
+end
+
+local function isEnemyVisible(targetPart)
+    local character = player.Character
+    if not character then return false end
+    
+    local originPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+    if not originPart then return false end
+    
+    local direction = (targetPart.Position - originPart.Position).Unit
+    local distance = (targetPart.Position - originPart.Position).Magnitude
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    
+    local result = workspace:Raycast(originPart.Position, direction * distance, raycastParams)
+    
+    if result then
+        return result.Instance:IsDescendantOf(targetPart.Parent)
+    end
+    return false
+end
+
+local function getScreenCenter()
+    local viewportSize = Camera.ViewportSize
+    return Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+end
+
+local function getBestTarget()
+    local bestTarget = nil
+    local shortestDistance = math.huge
+    local center = getScreenCenter()
+    
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = v.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 and isEnemy(v) then
+                local targetPart = v.Character.HumanoidRootPart
+                local pos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                
+                if onScreen and isEnemyVisible(targetPart) then
+                    local distance = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                    if distance < shortestDistance then
+                        bestTarget = targetPart
+                        shortestDistance = distance
+                    end
+                end
+            end
+        end
+    end
+    return bestTarget
+end
+
+local function getNearestVisibleEnemy()
+    local nearest = nil
+    local shortestDistance = math.huge
+    local character = player.Character
+    if not character then return nil end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return nil end
+    
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = v.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 and isEnemy(v) then
+                local targetRoot = v.Character.HumanoidRootPart
+                local distance = (targetRoot.Position - rootPart.Position).Magnitude
+                if distance < shortestDistance and isEnemyVisible(targetRoot) then
+                    nearest = v
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function getCurrentWeapon()
+    local character = player.Character
+    if not character then return nil end
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("Tool") and child:FindFirstChild("fire") then
+            return child
+        end
+    end
+    return nil
+end
+
+local function shootAtEnemy(enemy)
+    if not enemy or not enemy.Character then return false end
+    local weapon = getCurrentWeapon()
+    if not weapon then return false end
+    
+    local targetPart = enemy.Character:FindFirstChild("HumanoidRootPart") or enemy.Character:FindFirstChild("Head")
+    if not targetPart then return false end
+    if not isEnemyVisible(targetPart) then return false end
+    
+    local character = player.Character
+    if not character then return false end
+    
+    local myPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+    if not myPart then return false end
+    
+    local direction = (targetPart.Position - myPart.Position).Unit
+    
+    pcall(function()
+        if weapon:FindFirstChild("fire") then
+            weapon.fire:FireServer()
+        end
+        local killRemote = weapon:FindFirstChild("kill")
+        if killRemote then
+            killRemote:FireServer(enemy, direction, targetPart.Position)
+        end
+    end)
+    
+    return true
+end
+
+local function autoShootLoop()
+    while autoShootEnabled do
+        local now = tick()
+        if now - autoShootLastTime >= autoShootDelay then
+            local nearestEnemy = getNearestVisibleEnemy()
+            if nearestEnemy then
+                if shootAtEnemy(nearestEnemy) then
+                    autoShootLastTime = now
+                end
+            end
+        end
+        RunService.Heartbeat:Wait()
+    end
+end
+
+local function enableAutoShoot()
+    autoShootEnabled = true
+    autoShootLastTime = 0
+    task.spawn(autoShootLoop)
+end
+
+local function disableAutoShoot()
+    autoShootEnabled = false
+end
+
+local function enablePerfectShoot()
+    if mt then return end
+    mt = getrawmetatable(game)
+    oldIndex = mt.__index
+    setreadonly(mt, false)
+    mt.__index = newcclosure(function(self, index)
+        if index == "Hit" or index == "Target" then
+            local targetPart = getBestTarget()
+            if targetPart and targetPart.Parent and targetPart.Parent:FindFirstChild("Humanoid") then
+                local humanoid = targetPart.Parent.Humanoid
+                if humanoid.Health > 0 then
+                    if index == "Hit" then
+                        return targetPart.CFrame
+                    else
+                        return targetPart
+                    end
+                end
+            end
+        end
+        return oldIndex(self, index)
+    end)
+    setreadonly(mt, true)
+end
+
+local function disablePerfectShoot()
+    if mt then
+        setreadonly(mt, false)
+        mt.__index = oldIndex
+        setreadonly(mt, true)
+        mt = nil
+    end
+end
+
+local KnifeKill = nil
+pcall(function()
+    KnifeKill = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("KnifeKill")
+end)
+
+local function killAll()
+    if not KnifeKill then return end
+    for _, targetPlayer in ipairs(Players:GetPlayers()) do
+        if targetPlayer ~= player and isEnemy(targetPlayer) then
+            local character = targetPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                pcall(function()
+                    KnifeKill:FireServer(targetPlayer, targetPlayer)
+                end)
+            end
+        end
+    end
+end
+
+local function updateESP()
+    if not espEnabled then return end
+    
+    refreshLocalTeam()
+    
+    for _, otherPlayer in pairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            local character = otherPlayer.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid and humanoid.Health > 0 then
+                    local highlight = highlightObjects[otherPlayer]
+                    
+                    if not highlight or highlight.Parent ~= character then
+                        if highlight then
+                            pcall(function() highlight:Destroy() end)
+                        end
+                        
+                        highlight = Instance.new("Highlight")
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.FillTransparency = 0.5
+                        highlight.OutlineTransparency = 0.3
+                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        
+                        if isEnemy(otherPlayer) then
+                            highlight.FillColor = Color3.fromRGB(255, 50, 100)
+                        else
+                            highlight.FillColor = Color3.fromRGB(0, 255, 150)
+                        end
+                        
+                        highlight.Parent = character
+                        highlightObjects[otherPlayer] = highlight
+                    end
+                else
+                    if highlightObjects[otherPlayer] then
+                        pcall(function() highlightObjects[otherPlayer]:Destroy() end)
+                        highlightObjects[otherPlayer] = nil
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function clearESP()
+    for _, highlight in pairs(highlightObjects) do
+        pcall(function() highlight:Destroy() end)
+    end
+    highlightObjects = {}
+end
+
+local dragging = false
+local dragStart
+local startPos
+
+button.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = button.Position
+    end
+end)
+
+userInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        local newPosition = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        button.Position = newPosition
+    end
+end)
+
+button.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+local menuDragging = false
+local menuDragStart
+local menuStartPos
+
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        menuDragging = true
+        menuDragStart = input.Position
+        menuStartPos = menu.Position
+    end
+end)
+
+userInputService.InputChanged:Connect(function(input)
+    if menuDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - menuDragStart
+        local newPosition = UDim2.new(menuStartPos.X.Scale, menuStartPos.X.Offset + delta.X, menuStartPos.Y.Scale, menuStartPos.Y.Offset + delta.Y)
+        menu.Position = newPosition
+    end
+end)
+
+userInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        menuDragging = false
+    end
+end)
+
+button.MouseButton1Click:Connect(function()
+    if menu.Visible then
+        TweenService:Create(menu, TweenInfo.new(0.12), {BackgroundTransparency = 1}):Play()
+        task.wait(0.08)
+        menu.Visible = false
+    else
+        local buttonPos = button.AbsolutePosition
+        local buttonSize = button.AbsoluteSize
+        local menuSize = menu.AbsoluteSize
+        local screenSize = screenGui.AbsoluteSize
+        
+        local targetX = buttonPos.X - menuSize.X - 8
+        if targetX < 0 then
+            targetX = buttonPos.X + buttonSize.X + 8
+        end
+        if targetX + menuSize.X > screenSize.X then
+            targetX = screenSize.X - menuSize.X - 5
+        end
+        
+        local targetY = buttonPos.Y - 20
+        if targetY < 5 then
+            targetY = 5
+        end
+        if targetY + menuSize.Y > screenSize.Y then
+            targetY = screenSize.Y - menuSize.Y - 5
+        end
+        
+        menu.Position = UDim2.new(0, targetX, 0, targetY)
+        menu.BackgroundTransparency = 1
+        menu.Visible = true
+        TweenService:Create(menu, TweenInfo.new(0.18, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {BackgroundTransparency = 0.03}):Play()
+        
+        local bounceTween = TweenService:Create(menu, TweenInfo.new(0.08, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0, targetX + 2, 0, targetY + 2)
+        })
+        bounceTween:Play()
+        bounceTween.Completed:Connect(function()
+            TweenService:Create(menu, TweenInfo.new(0.04), {
+                Position = UDim2.new(0, targetX, 0, targetY)
+            }):Play()
+        end)
+    end
+end)
+
+perfectShootBtn.MouseButton1Click:Connect(function()
+    perfectShootEnabled = not perfectShootEnabled
+    if perfectShootEnabled then
+        perfectShootBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
+        psStroke.Color = Color3.fromRGB(0, 255, 80)
+        perfectShootBtn.Text = "  PERFECT SHOOT  ON"
+        enablePerfectShoot()
+    else
+        perfectShootBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+        psStroke.Color = Color3.fromRGB(180, 90, 255)
+        perfectShootBtn.Text = "  PERFECT SHOOT  OFF"
+        disablePerfectShoot()
+    end
+    animateButton(perfectShootBtn, perfectShootEnabled)
+end)
+
+autoShootBtn.MouseButton1Click:Connect(function()
+    if autoShootEnabled then
+        autoShootEnabled = false
+        autoShootBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+        asStroke.Color = Color3.fromRGB(180, 90, 255)
+        autoShootBtn.Text = "  AUTO SHOOT  OFF"
+    else
+        autoShootEnabled = true
+        autoShootBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
+        asStroke.Color = Color3.fromRGB(0, 255, 80)
+        autoShootBtn.Text = "  AUTO SHOOT  ON"
+        task.spawn(autoShootLoop)
+    end
+    animateButton(autoShootBtn, autoShootEnabled)
+end)
+
+espBtn.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    if espEnabled then
+        espBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
+        espStroke.Color = Color3.fromRGB(0, 255, 80)
+        espBtn.Text = "  CHAMS ESP  ON"
+        refreshLocalTeam()
+        updateESP()
+    else
+        espBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+        espStroke.Color = Color3.fromRGB(180, 90, 255)
+        espBtn.Text = "  CHAMS ESP  OFF"
+        clearESP()
+    end
+    animateButton(espBtn, espEnabled)
+end)
+
+aimKillBtn.MouseButton1Click:Connect(function()
+    aimKillEnabled = not aimKillEnabled
+    if aimKillEnabled then
+        aimKillBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
+        akStroke.Color = Color3.fromRGB(0, 255, 80)
+        aimKillBtn.Text = "  AIM KILL  ON"
+    else
+        aimKillBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+        akStroke.Color = Color3.fromRGB(180, 90, 255)
+        aimKillBtn.Text = "  AIM KILL  OFF"
+    end
+    animateButton(aimKillBtn, aimKillEnabled)
+end)
+
+task.spawn(function()
+    while true do
+        if aimKillEnabled then
+            killAll()
+        end
+        task.wait()
+    end
+end)
+
+Players.PlayerAdded:Connect(function()
+    if espEnabled then
+        task.wait(0.5)
+        refreshLocalTeam()
+        updateESP()
+    end
+    if hitboxEnabled then
+        updateHitboxPlayers()
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    local highlight = highlightObjects[p]
+    if highlight then
+        pcall(function() highlight:Destroy() end)
+        highlightObjects[p] = nil
+    end
+    if hitboxEnabled then
+        restoreOriginalHitbox(p)
+        for i, v in pairs(affectedPlayers) do
+            if v == p then
+                table.remove(affectedPlayers, i)
+                break
+            end
+        end
+    end
+end)
+
+player.CharacterAdded:Connect(function()
+    if espEnabled then
+        task.wait(0.5)
+        refreshLocalTeam()
+        updateESP()
+    end
+end)
+
+local lastESPUpdate = 0
+RunService.RenderStepped:Connect(function()
+    if espEnabled then
+        local now = tick()
+        if now - lastESPUpdate >= 1 then
+            pcall(updateESP)
+            lastESPUpdate = now
+        end
+    end
+    if hitboxEnabled then
+        pcall(applyHitbox)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        btnGradient.Rotation = (btnGradient.Rotation + 3) % 360
+        btnStroke.Transparency = 0.1 + math.sin(tick() * 4) * 0.12
+        btnGlow.ImageTransparency = 0.4 + math.sin(tick() * 3.5) * 0.2
+        btnGlow.Rotation = (btnGlow.Rotation + 1) % 360
+        task.wait(0.02)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if menu.Visible then
+            menuGradient.Rotation = (menuGradient.Rotation + 2) % 360
+            
+            borderTopGrad.Rotation = (borderTopGrad.Rotation + 2.5) % 360
+            borderBottomGrad.Rotation = (borderBottomGrad.Rotation - 2.5) % 360
+            borderLeftGrad.Rotation = (borderLeftGrad.Rotation + 2.5) % 360
+            borderRightGrad.Rotation = (borderRightGrad.Rotation - 2.5) % 360
+            
+            borderTop.BackgroundTransparency = 0.3 + math.sin(tick() * 5) * 0.35
+            borderBottom.BackgroundTransparency = 0.3 + math.cos(tick() * 5) * 0.35
+            borderLeft.BackgroundTransparency = 0.3 + math.sin(tick() * 5 + 1) * 0.35
+            borderRight.BackgroundTransparency = 0.3 + math.cos(tick() * 5 + 1) * 0.35
+            
+            local scanPos = ((tick() * 0.4) % 1.4) - 0.2
+            scanLine.Position = UDim2.new(0, 0, scanPos, 0)
+            scanLine.BackgroundTransparency = 0.3 + math.sin(tick() * 6) * 0.5
+            
+            topGlow.ImageTransparency = 0.6 + math.sin(tick() * 3) * 0.25
+            
+            for _, pData in ipairs(menuParticles) do
+                if pData.obj and pData.obj.Parent then
+                    local angle = tick() * pData.speed + pData.offset
+                    local x = 0.5 + math.cos(angle) * pData.radius
+                    local y = pData.baseY + math.sin(angle * 1.5) * 0.15
+                    pData.obj.Position = UDim2.new(x, 0, y, 0)
+                    pData.obj.BackgroundTransparency = 0.2 + math.sin(tick() * 3 + pData.offset) * 0.5
+                end
+            end
+            
+            for i, cornerGlow in ipairs(cornerGlows) do
+                if cornerGlow and cornerGlow.Parent then
+                    cornerGlow.ImageTransparency = 0.4 + math.sin(tick() * 3.5 + i) * 0.35
+                    cornerGlow.Rotation = (cornerGlow.Rotation + (1 + i * 0.5)) % 360
+                    cornerGlow.Size = UDim2.new(0, 25 + math.sin(tick() * 4 + i) * 8, 0, 25 + math.sin(tick() * 4 + i) * 8)
+                end
+            end
+            
+            imgGlow.Rotation = (imgGlow.Rotation + 1.8) % 360
+            imgGlow.ImageTransparency = 0.45 + math.sin(tick() * 2.8) * 0.25
+            headerGlow.ImageTransparency = 0.45 + math.cos(tick() * 2.8) * 0.25
+            
+            separatorLine.BackgroundTransparency = 0.4 + math.sin(tick() * 3) * 0.3
+        end
+        task.wait(0.025)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if hitboxEnabled then
+            updateHitboxPlayers()
+        end
+        task.wait(1)
+    end
+end)
