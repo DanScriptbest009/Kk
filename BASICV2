@@ -10,7 +10,6 @@ local UIS = game:GetService("UserInputService")
 
 local isMobile = UIS.TouchEnabled
 local perfectShootEnabled = false
-local aimKillEnabled = false
 local espEnabled = false
 local autoShootEnabled = false
 local hitboxEnabled = false
@@ -23,6 +22,41 @@ local autoShootDelay = 0.05
 local localTeamCache = nil
 local affectedPlayers = {}
 local originalHitboxSizes = {}
+
+local instaKillEnabled = false
+local KnifeKill = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Networking") and ReplicatedStorage.Packages.Networking:FindFirstChild("RE/Combat/KnifeKill")
+local playerList = {}
+local hasTool = false
+
+local function UpdateToolState()
+    hasTool = false
+    for _, v in ipairs(player.Backpack:GetChildren()) do
+        if v.ClassName == "Tool" then
+            hasTool = true
+            break
+        end
+    end
+end
+
+player.Backpack.ChildAdded:Connect(UpdateToolState)
+player.Backpack.ChildRemoved:Connect(UpdateToolState)
+UpdateToolState()
+
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= player then
+        playerList[p] = true
+    end
+end
+
+Players.PlayerAdded:Connect(function(p)
+    if p ~= player then
+        playerList[p] = true
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    playerList[p] = nil
+end)
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DANHUB"
@@ -349,7 +383,7 @@ end
 local perfectShootBtn, psStroke = createToggle("PERFECT SHOOT", 95)
 local autoShootBtn, asStroke = createToggle("AUTO SHOOT", 132)
 local espBtn, espStroke = createToggle("CHAMS ESP", 169)
-local aimKillBtn, akStroke = createToggle("AIM KILL", 206)
+local instaKillBtn, ikStroke = createToggle("INSTA KILL", 206)
 
 local hitboxFrame = Instance.new("Frame")
 hitboxFrame.Size = UDim2.new(0.9, 0, 0, 80)
@@ -853,26 +887,6 @@ local function disablePerfectShoot()
     end
 end
 
-local KnifeKill = nil
-pcall(function()
-    KnifeKill = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("KnifeKill")
-end)
-
-local function killAll()
-    if not KnifeKill then return end
-    for _, targetPlayer in ipairs(Players:GetPlayers()) do
-        if targetPlayer ~= player and isEnemy(targetPlayer) then
-            local character = targetPlayer.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                pcall(function()
-                    KnifeKill:FireServer(targetPlayer, targetPlayer)
-                end)
-            end
-        end
-    end
-end
-
 local function updateESP()
     if not espEnabled then return end
     
@@ -1069,26 +1083,30 @@ espBtn.MouseButton1Click:Connect(function()
     animateButton(espBtn, espEnabled)
 end)
 
-aimKillBtn.MouseButton1Click:Connect(function()
-    aimKillEnabled = not aimKillEnabled
-    if aimKillEnabled then
-        aimKillBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
-        akStroke.Color = Color3.fromRGB(0, 255, 80)
-        aimKillBtn.Text = "  AIM KILL  ON"
+instaKillBtn.MouseButton1Click:Connect(function()
+    instaKillEnabled = not instaKillEnabled
+    if instaKillEnabled then
+        instaKillBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
+        ikStroke.Color = Color3.fromRGB(0, 255, 80)
+        instaKillBtn.Text = "  INSTA KILL  ON"
     else
-        aimKillBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
-        akStroke.Color = Color3.fromRGB(180, 90, 255)
-        aimKillBtn.Text = "  AIM KILL  OFF"
+        instaKillBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+        ikStroke.Color = Color3.fromRGB(180, 90, 255)
+        instaKillBtn.Text = "  INSTA KILL  OFF"
     end
-    animateButton(aimKillBtn, aimKillEnabled)
+    animateButton(instaKillBtn, instaKillEnabled)
 end)
 
 task.spawn(function()
     while true do
-        if aimKillEnabled then
-            killAll()
+        if instaKillEnabled and hasTool and KnifeKill then
+            for p in pairs(playerList) do
+                pcall(function()
+                    KnifeKill:FireServer(p)
+                end)
+            end
         end
-        task.wait()
+        task.wait(1/28)
     end
 end)
 
