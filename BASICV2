@@ -1106,7 +1106,7 @@ task.spawn(function()
                 end)
             end
         end
-        task.wait(0.0001)
+        task.wait(0.3)
     end
 end)
 
