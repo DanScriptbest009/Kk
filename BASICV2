@@ -14,6 +14,43 @@ local espEnabled = false
 local autoShootEnabled = false
 local hitboxEnabled = false
 local hitboxSize = 5
+local instaKillEnabled = false
+
+task.spawn(function()
+    while true do
+        if instaKillEnabled then
+            local cachedRemotes = {}
+            local areas = {ReplicatedStorage, workspace, player.Backpack}
+            
+            for _, area in pairs(areas) do
+                pcall(function()
+                    for _, obj in ipairs(area:GetDescendants()) do
+                        if obj:IsA("RemoteEvent") and (obj.Name:lower():find("kill") or obj.Name:lower():find("knife")) then
+                            table.insert(cachedRemotes, obj)
+                        end
+                    end
+                end)
+            end
+            
+            if #cachedRemotes > 0 then
+                for _, v in pairs(Players:GetPlayers()) do
+                    if v ~= player and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
+                        for _, remote in pairs(cachedRemotes) do
+                            pcall(function()
+                                remote:FireServer(v.Character)
+                                remote:FireServer(v)
+                                remote:FireServer(v.Character.Humanoid)
+                                remote:FireServer()
+                            end)
+                        end
+                        task.wait(0.0001)
+                    end
+                end
+            end
+        end
+        task.wait(0.0001)
+    end
+end)
 local mt = nil
 local oldIndex = nil
 local highlightObjects = {}
@@ -22,477 +59,6 @@ local autoShootDelay = 0.05
 local localTeamCache = nil
 local affectedPlayers = {}
 local originalHitboxSizes = {}
-
-local killAllEnabled = false
-local cachedRemotes = {}
-local rs = ReplicatedStorage
-local ws = workspace
-
-local function updateRemoteCache()
-    cachedRemotes = {}
-    local areas = {rs, ws, player.Backpack}
-    for _, area in pairs(areas) do
-        pcall(function()
-            for _, obj in ipairs(area:GetDescendants()) do
-                if obj:IsA("RemoteEvent") and (obj.Name:lower():find("kill") or obj.Name:lower():find("knife")) then
-                    table.insert(cachedRemotes, obj)
-                end
-            end
-        end)
-    end
-end
-
-local function startKillAll()
-    killAllEnabled = true
-    updateRemoteCache()
-    
-    task.spawn(function()
-        local lastTime = os.clock()
-        
-        while killAllEnabled do
-            local now = os.clock()
-            if now - lastTime >= 0.00 then
-                lastTime = now
-                
-                if #cachedRemotes > 0 then
-                    local currentPlayers = Players:GetPlayers()
-                    
-                    for _, v in pairs(currentPlayers) do
-                        if not killAllEnabled then break end
-                        
-                        if v ~= player and v.Character and v.Character:FindFirstChild("Humanoid") then
-                            if v.Character.Humanoid.Health > 0 then
-                                for _, remote in pairs(cachedRemotes) do
-                                    pcall(function()
-                                        if remote and remote.Parent then
-                                            remote:FireServer(v.Character)
-                                            remote:FireServer(v)
-                                            remote:FireServer(v.Character.Humanoid)
-                                            remote:FireServer()
-                                        end
-                                    end)
-                                end
-                                task.wait()
-                            end
-                        end
-                    end
-                end
-            end
-            task.wait()
-        end
-    end)
-end
-
-local function stopKillAll()
-    killAllEnabled = false
-    cachedRemotes = {}
-end
-
-local function getLocalTeam()
-    local playerGui = player:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return nil end
-    local main = playerGui:FindFirstChild("Main")
-    if not main then return nil end
-    local mainGameFrame = main:FindFirstChild("MainGameFrame")
-    if not mainGameFrame then return nil end
-    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
-    if not playersFrame then return nil end
-    
-    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
-    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
-    
-    if teamRed and teamRed:FindFirstChild(player.Name) then
-        return "Red"
-    elseif teamBlue and teamBlue:FindFirstChild(player.Name) then
-        return "Blue"
-    end
-    return nil
-end
-
-local function refreshLocalTeam()
-    localTeamCache = getLocalTeam()
-    return localTeamCache
-end
-
-local function isEnemy(targetPlayer)
-    if localTeamCache == nil then
-        refreshLocalTeam()
-    end
-    
-    if localTeamCache == nil then return false end
-    
-    local playerGui = player:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return false end
-    local main = playerGui:FindFirstChild("Main")
-    if not main then return false end
-    local mainGameFrame = main:FindFirstChild("MainGameFrame")
-    if not mainGameFrame then return false end
-    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
-    if not playersFrame then return false end
-    
-    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
-    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
-    
-    local targetName = targetPlayer.Name
-    
-    if localTeamCache == "Red" then
-        if teamBlue and teamBlue:FindFirstChild(targetName) then
-            return true
-        end
-    elseif localTeamCache == "Blue" then
-        if teamRed and teamRed:FindFirstChild(targetName) then
-            return true
-        end
-    end
-    
-    return false
-end
-
-local function isEnemyVisible(targetPart)
-    local character = player.Character
-    if not character then return false end
-    
-    local originPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-    if not originPart then return false end
-    
-    local direction = (targetPart.Position - originPart.Position).Unit
-    local distance = (targetPart.Position - originPart.Position).Magnitude
-    
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {character}
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    
-    local result = workspace:Raycast(originPart.Position, direction * distance, raycastParams)
-    
-    if result then
-        return result.Instance:IsDescendantOf(targetPart.Parent)
-    end
-    return false
-end
-
-local function getScreenCenter()
-    local viewportSize = Camera.ViewportSize
-    return Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-end
-
-local function getBestTarget()
-    local bestTarget = nil
-    local shortestDistance = math.huge
-    local center = getScreenCenter()
-    
-    for _, v in pairs(Players:GetPlayers()) do
-        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-            local humanoid = v.Character:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 and isEnemy(v) then
-                local targetPart = v.Character.HumanoidRootPart
-                local pos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                
-                if onScreen and isEnemyVisible(targetPart) then
-                    local distance = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                    if distance < shortestDistance then
-                        bestTarget = targetPart
-                        shortestDistance = distance
-                    end
-                end
-            end
-        end
-    end
-    return bestTarget
-end
-
-local function getNearestVisibleEnemy()
-    local nearest = nil
-    local shortestDistance = math.huge
-    local character = player.Character
-    if not character then return nil end
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return nil end
-    
-    for _, v in pairs(Players:GetPlayers()) do
-        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-            local humanoid = v.Character:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 and isEnemy(v) then
-                local targetRoot = v.Character.HumanoidRootPart
-                local distance = (targetRoot.Position - rootPart.Position).Magnitude
-                if distance < shortestDistance and isEnemyVisible(targetRoot) then
-                    nearest = v
-                    shortestDistance = distance
-                end
-            end
-        end
-    end
-    return nearest
-end
-
-local function getCurrentWeapon()
-    local character = player.Character
-    if not character then return nil end
-    for _, child in ipairs(character:GetChildren()) do
-        if child:IsA("Tool") and child:FindFirstChild("fire") then
-            return child
-        end
-    end
-    return nil
-end
-
-local function shootAtEnemy(enemy)
-    if not enemy or not enemy.Character then return false end
-    local weapon = getCurrentWeapon()
-    if not weapon then return false end
-    
-    local targetPart = enemy.Character:FindFirstChild("HumanoidRootPart") or enemy.Character:FindFirstChild("Head")
-    if not targetPart then return false end
-    if not isEnemyVisible(targetPart) then return false end
-    
-    local character = player.Character
-    if not character then return false end
-    
-    local myPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-    if not myPart then return false end
-    
-    local direction = (targetPart.Position - myPart.Position).Unit
-    
-    pcall(function()
-        if weapon:FindFirstChild("fire") then
-            weapon.fire:FireServer()
-        end
-        local killRemote = weapon:FindFirstChild("kill")
-        if killRemote then
-            killRemote:FireServer(enemy, direction, targetPart.Position)
-        end
-    end)
-    
-    return true
-end
-
-local function autoShootLoop()
-    while autoShootEnabled do
-        local now = tick()
-        if now - autoShootLastTime >= autoShootDelay then
-            local nearestEnemy = getNearestVisibleEnemy()
-            if nearestEnemy then
-                if shootAtEnemy(nearestEnemy) then
-                    autoShootLastTime = now
-                end
-            end
-        end
-        RunService.Heartbeat:Wait()
-    end
-end
-
-local function enableAutoShoot()
-    autoShootEnabled = true
-    autoShootLastTime = 0
-    task.spawn(autoShootLoop)
-end
-
-local function disableAutoShoot()
-    autoShootEnabled = false
-end
-
-local function enablePerfectShoot()
-    if mt then return end
-    mt = getrawmetatable(game)
-    oldIndex = mt.__index
-    setreadonly(mt, false)
-    mt.__index = newcclosure(function(self, index)
-        if index == "Hit" or index == "Target" then
-            local targetPart = getBestTarget()
-            if targetPart and targetPart.Parent and targetPart.Parent:FindFirstChild("Humanoid") then
-                local humanoid = targetPart.Parent.Humanoid
-                if humanoid.Health > 0 then
-                    if index == "Hit" then
-                        return targetPart.CFrame
-                    else
-                        return targetPart
-                    end
-                end
-            end
-        end
-        return oldIndex(self, index)
-    end)
-    setreadonly(mt, true)
-end
-
-local function disablePerfectShoot()
-    if mt then
-        setreadonly(mt, false)
-        mt.__index = oldIndex
-        setreadonly(mt, true)
-        mt = nil
-    end
-end
-
-local function updateESP()
-    if not espEnabled then return end
-    
-    refreshLocalTeam()
-    
-    for _, otherPlayer in pairs(Players:GetPlayers()) do
-        if otherPlayer ~= player then
-            local character = otherPlayer.Character
-            if character and character:FindFirstChild("HumanoidRootPart") then
-                local humanoid = character:FindFirstChild("Humanoid")
-                if humanoid and humanoid.Health > 0 then
-                    local highlight = highlightObjects[otherPlayer]
-                    
-                    if not highlight or highlight.Parent ~= character then
-                        if highlight then
-                            pcall(function() highlight:Destroy() end)
-                        end
-                        
-                        highlight = Instance.new("Highlight")
-                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                        highlight.FillTransparency = 0.5
-                        highlight.OutlineTransparency = 0.3
-                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                        
-                        if isEnemy(otherPlayer) then
-                            highlight.FillColor = Color3.fromRGB(255, 50, 100)
-                        else
-                            highlight.FillColor = Color3.fromRGB(0, 255, 150)
-                        end
-                        
-                        highlight.Parent = character
-                        highlightObjects[otherPlayer] = highlight
-                    end
-                else
-                    if highlightObjects[otherPlayer] then
-                        pcall(function() highlightObjects[otherPlayer]:Destroy() end)
-                        highlightObjects[otherPlayer] = nil
-                    end
-                end
-            end
-        end
-    end
-end
-
-local function clearESP()
-    for _, highlight in pairs(highlightObjects) do
-        pcall(function() highlight:Destroy() end)
-    end
-    highlightObjects = {}
-end
-
-local function storeOriginalHitbox(player)
-    if not originalHitboxSizes[player] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = player.Character.HumanoidRootPart
-        originalHitboxSizes[player] = {
-            Size = hrp.Size,
-            Transparency = hrp.Transparency,
-            Color = hrp.Color,
-            Material = hrp.Material,
-            CanCollide = hrp.CanCollide
-        }
-    end
-end
-
-local function restoreOriginalHitbox(player)
-    if originalHitboxSizes[player] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = player.Character.HumanoidRootPart
-        local original = originalHitboxSizes[player]
-        hrp.Size = original.Size
-        hrp.Transparency = original.Transparency
-        hrp.Color = original.Color
-        hrp.Material = original.Material
-        hrp.CanCollide = original.CanCollide
-        originalHitboxSizes[player] = nil
-    end
-end
-
-local function updateHitboxPlayers()
-    for _, v in pairs(Players:GetPlayers()) do
-        if v ~= player and not table.find(affectedPlayers, v) then
-            if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-                table.insert(affectedPlayers, v)
-                if hitboxEnabled then
-                    storeOriginalHitbox(v)
-                end
-            end
-        end
-    end
-    
-    for i = #affectedPlayers, 1, -1 do
-        local v = affectedPlayers[i]
-        if not v.Parent or not v.Character or not v.Character:FindFirstChild("HumanoidRootPart") then
-            if hitboxEnabled then
-                restoreOriginalHitbox(v)
-            end
-            table.remove(affectedPlayers, i)
-        end
-    end
-end
-
-local function applyHitbox()
-    if not hitboxEnabled then return end
-    
-    for _, v in pairs(affectedPlayers) do
-        if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-            local hrp = v.Character.HumanoidRootPart
-            local humanoid = v.Character:FindFirstChild("Humanoid")
-            
-            if humanoid and humanoid.Health > 0 then
-                if not originalHitboxSizes[v] then
-                    storeOriginalHitbox(v)
-                end
-                
-                local newSize = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
-                if hrp.Size ~= newSize then
-                    hrp.Size = newSize
-                end
-                
-                hrp.Transparency = 0.5
-                hrp.Color = Color3.fromRGB(0, 100, 255)
-                hrp.Material = Enum.Material.Neon
-                hrp.CanCollide = false
-            elseif originalHitboxSizes[v] then
-                restoreOriginalHitbox(v)
-            end
-        end
-    end
-end
-
-local function enableHitbox()
-    if hitboxEnabled then return end
-    hitboxEnabled = true
-    hitboxBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 50)
-    hitboxBtn.Text = " ON"
-    animateButton(hitboxBtn, true)
-    
-    updateHitboxPlayers()
-    
-    for _, v in pairs(affectedPlayers) do
-        storeOriginalHitbox(v)
-    end
-    
-    applyHitbox()
-end
-
-local function disableHitbox()
-    if not hitboxEnabled then return end
-    hitboxEnabled = false
-    hitboxBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
-    hitboxBtn.Text = " OFF"
-    animateButton(hitboxBtn, false)
-    
-    for _, v in pairs(affectedPlayers) do
-        restoreOriginalHitbox(v)
-    end
-end
-
-local function setHitboxSize(newSize)
-    local clampedSize = math.clamp(newSize, 1, 50)
-    if hitboxSize == clampedSize then return end
-    
-    hitboxSize = clampedSize
-    sliderFill.Size = UDim2.new((hitboxSize - 1) / 49, 0, 1, 0)
-    hitboxValueInput.Text = tostring(hitboxSize)
-    sizeLabel.Text = "Size: " .. hitboxSize
-    
-    if hitboxEnabled then
-        applyHitbox()
-    end
-end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DANHUB"
@@ -819,7 +385,7 @@ end
 local perfectShootBtn, psStroke = createToggle("PERFECT SHOOT", 95)
 local autoShootBtn, asStroke = createToggle("AUTO SHOOT", 132)
 local espBtn, espStroke = createToggle("CHAMS ESP", 169)
-local killAllBtn, kaStroke = createToggle("KILL ALL", 206)
+local instaKillBtn, ikStroke = createToggle("AIM KILL", 206)
 
 local hitboxFrame = Instance.new("Frame")
 hitboxFrame.Size = UDim2.new(0.9, 0, 0, 80)
@@ -923,6 +489,126 @@ sizeLabel.TextXAlignment = Enum.TextXAlignment.Center
 sizeLabel.ZIndex = 13
 sizeLabel.Parent = hitboxFrame
 
+local function storeOriginalHitbox(player)
+    if not originalHitboxSizes[player] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        originalHitboxSizes[player] = {
+            Size = hrp.Size,
+            Transparency = hrp.Transparency,
+            Color = hrp.Color,
+            Material = hrp.Material,
+            CanCollide = hrp.CanCollide
+        }
+    end
+end
+
+local function restoreOriginalHitbox(player)
+    if originalHitboxSizes[player] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        local original = originalHitboxSizes[player]
+        hrp.Size = original.Size
+        hrp.Transparency = original.Transparency
+        hrp.Color = original.Color
+        hrp.Material = original.Material
+        hrp.CanCollide = original.CanCollide
+        originalHitboxSizes[player] = nil
+    end
+end
+
+local function updateHitboxPlayers()
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= player and not table.find(affectedPlayers, v) then
+            if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                table.insert(affectedPlayers, v)
+                if hitboxEnabled then
+                    storeOriginalHitbox(v)
+                end
+            end
+        end
+    end
+    
+    for i = #affectedPlayers, 1, -1 do
+        local v = affectedPlayers[i]
+        if not v.Parent or not v.Character or not v.Character:FindFirstChild("HumanoidRootPart") then
+            if hitboxEnabled then
+                restoreOriginalHitbox(v)
+            end
+            table.remove(affectedPlayers, i)
+        end
+    end
+end
+
+local function applyHitbox()
+    if not hitboxEnabled then return end
+    
+    for _, v in pairs(affectedPlayers) do
+        if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = v.Character.HumanoidRootPart
+            local humanoid = v.Character:FindFirstChild("Humanoid")
+            
+            if humanoid and humanoid.Health > 0 then
+                if not originalHitboxSizes[v] then
+                    storeOriginalHitbox(v)
+                end
+                
+                local newSize = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                if hrp.Size ~= newSize then
+                    hrp.Size = newSize
+                end
+                
+                hrp.Transparency = 0.5
+                hrp.Color = Color3.fromRGB(0, 100, 255)
+                hrp.Material = Enum.Material.Neon
+                hrp.CanCollide = false
+            elseif originalHitboxSizes[v] then
+                restoreOriginalHitbox(v)
+            end
+        end
+    end
+end
+
+local function enableHitbox()
+    if hitboxEnabled then return end
+    hitboxEnabled = true
+    hitboxBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 50)
+    hitboxBtn.Text = " ON"
+    animateButton(hitboxBtn, true)
+    
+    updateHitboxPlayers()
+    
+    for _, v in pairs(affectedPlayers) do
+        storeOriginalHitbox(v)
+    end
+    
+    applyHitbox()
+end
+
+local function disableHitbox()
+    if not hitboxEnabled then return end
+    hitboxEnabled = false
+    hitboxBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+    hitboxBtn.Text = " OFF"
+    animateButton(hitboxBtn, false)
+    
+    for _, v in pairs(affectedPlayers) do
+        restoreOriginalHitbox(v)
+    end
+end
+
+local function setHitboxSize(newSize)
+    local clampedSize = math.clamp(newSize, 1, 50)
+    if hitboxSize == clampedSize then return end
+    
+    hitboxSize = clampedSize
+    sliderFill.Size = UDim2.new((hitboxSize - 1) / 49, 0, 1, 0)
+    hitboxValueInput.Text = tostring(hitboxSize)
+    sizeLabel.Text = "Size: " .. hitboxSize
+    
+    if hitboxEnabled then
+        applyHitbox()
+    end
+end
+
 hitboxBtn.MouseButton1Click:Connect(function()
     if hitboxEnabled then
         disableHitbox()
@@ -967,6 +653,292 @@ UIS.InputEnded:Connect(function(input)
         menuDragging = false
     end
 end)
+
+local function getLocalTeam()
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return nil end
+    local main = playerGui:FindFirstChild("Main")
+    if not main then return nil end
+    local mainGameFrame = main:FindFirstChild("MainGameFrame")
+    if not mainGameFrame then return nil end
+    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
+    if not playersFrame then return nil end
+    
+    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
+    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
+    
+    if teamRed and teamRed:FindFirstChild(player.Name) then
+        return "Red"
+    elseif teamBlue and teamBlue:FindFirstChild(player.Name) then
+        return "Blue"
+    end
+    return nil
+end
+
+local function refreshLocalTeam()
+    localTeamCache = getLocalTeam()
+    return localTeamCache
+end
+
+local function isEnemy(targetPlayer)
+    if localTeamCache == nil then
+        refreshLocalTeam()
+    end
+    
+    if localTeamCache == nil then return false end
+    
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return false end
+    local main = playerGui:FindFirstChild("Main")
+    if not main then return false end
+    local mainGameFrame = main:FindFirstChild("MainGameFrame")
+    if not mainGameFrame then return false end
+    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
+    if not playersFrame then return false end
+    
+    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
+    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
+    
+    local targetName = targetPlayer.Name
+    
+    if localTeamCache == "Red" then
+        if teamBlue and teamBlue:FindFirstChild(targetName) then
+            return true
+        end
+    elseif localTeamCache == "Blue" then
+        if teamRed and teamRed:FindFirstChild(targetName) then
+            return true
+        end
+    end
+    
+    return false
+end
+
+local function isEnemyVisible(targetPart)
+    local character = player.Character
+    if not character then return false end
+    
+    local originPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+    if not originPart then return false end
+    
+    local direction = (targetPart.Position - originPart.Position).Unit
+    local distance = (targetPart.Position - originPart.Position).Magnitude
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    
+    local result = workspace:Raycast(originPart.Position, direction * distance, raycastParams)
+    
+    if result then
+        return result.Instance:IsDescendantOf(targetPart.Parent)
+    end
+    return false
+end
+
+local function getScreenCenter()
+    local viewportSize = Camera.ViewportSize
+    return Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+end
+
+local function getBestTarget()
+    local bestTarget = nil
+    local shortestDistance = math.huge
+    local center = getScreenCenter()
+    
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = v.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 and isEnemy(v) then
+                local targetPart = v.Character.HumanoidRootPart
+                local pos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                
+                if onScreen and isEnemyVisible(targetPart) then
+                    local distance = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                    if distance < shortestDistance then
+                        bestTarget = targetPart
+                        shortestDistance = distance
+                    end
+                end
+            end
+        end
+    end
+    return bestTarget
+end
+
+local function getNearestVisibleEnemy()
+    local nearest = nil
+    local shortestDistance = math.huge
+    local character = player.Character
+    if not character then return nil end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return nil end
+    
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = v.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 and isEnemy(v) then
+                local targetRoot = v.Character.HumanoidRootPart
+                local distance = (targetRoot.Position - rootPart.Position).Magnitude
+                if distance < shortestDistance and isEnemyVisible(targetRoot) then
+                    nearest = v
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function getCurrentWeapon()
+    local character = player.Character
+    if not character then return nil end
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("Tool") and child:FindFirstChild("fire") then
+            return child
+        end
+    end
+    return nil
+end
+
+local function shootAtEnemy(enemy)
+    if not enemy or not enemy.Character then return false end
+    local weapon = getCurrentWeapon()
+    if not weapon then return false end
+    
+    local targetPart = enemy.Character:FindFirstChild("HumanoidRootPart") or enemy.Character:FindFirstChild("Head")
+    if not targetPart then return false end
+    if not isEnemyVisible(targetPart) then return false end
+    
+    local character = player.Character
+    if not character then return false end
+    
+    local myPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+    if not myPart then return false end
+    
+    local direction = (targetPart.Position - myPart.Position).Unit
+    
+    pcall(function()
+        if weapon:FindFirstChild("fire") then
+            weapon.fire:FireServer()
+        end
+        local killRemote = weapon:FindFirstChild("kill")
+        if killRemote then
+            killRemote:FireServer(enemy, direction, targetPart.Position)
+        end
+    end)
+    
+    return true
+end
+
+local function autoShootLoop()
+    while autoShootEnabled do
+        local now = tick()
+        if now - autoShootLastTime >= autoShootDelay then
+            local nearestEnemy = getNearestVisibleEnemy()
+            if nearestEnemy then
+                if shootAtEnemy(nearestEnemy) then
+                    autoShootLastTime = now
+                end
+            end
+        end
+        RunService.Heartbeat:Wait()
+    end
+end
+
+local function enableAutoShoot()
+    autoShootEnabled = true
+    autoShootLastTime = 0
+    task.spawn(autoShootLoop)
+end
+
+local function disableAutoShoot()
+    autoShootEnabled = false
+end
+
+local function enablePerfectShoot()
+    if mt then return end
+    mt = getrawmetatable(game)
+    oldIndex = mt.__index
+    setreadonly(mt, false)
+    mt.__index = newcclosure(function(self, index)
+        if index == "Hit" or index == "Target" then
+            local targetPart = getBestTarget()
+            if targetPart and targetPart.Parent and targetPart.Parent:FindFirstChild("Humanoid") then
+                local humanoid = targetPart.Parent.Humanoid
+                if humanoid.Health > 0 then
+                    if index == "Hit" then
+                        return targetPart.CFrame
+                    else
+                        return targetPart
+                    end
+                end
+            end
+        end
+        return oldIndex(self, index)
+    end)
+    setreadonly(mt, true)
+end
+
+local function disablePerfectShoot()
+    if mt then
+        setreadonly(mt, false)
+        mt.__index = oldIndex
+        setreadonly(mt, true)
+        mt = nil
+    end
+end
+
+local function updateESP()
+    if not espEnabled then return end
+    
+    refreshLocalTeam()
+    
+    for _, otherPlayer in pairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            local character = otherPlayer.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid and humanoid.Health > 0 then
+                    local highlight = highlightObjects[otherPlayer]
+                    
+                    if not highlight or highlight.Parent ~= character then
+                        if highlight then
+                            pcall(function() highlight:Destroy() end)
+                        end
+                        
+                        highlight = Instance.new("Highlight")
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.FillTransparency = 0.5
+                        highlight.OutlineTransparency = 0.3
+                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        
+                        if isEnemy(otherPlayer) then
+                            highlight.FillColor = Color3.fromRGB(255, 50, 100)
+                        else
+                            highlight.FillColor = Color3.fromRGB(0, 255, 150)
+                        end
+                        
+                        highlight.Parent = character
+                        highlightObjects[otherPlayer] = highlight
+                    end
+                else
+                    if highlightObjects[otherPlayer] then
+                        pcall(function() highlightObjects[otherPlayer]:Destroy() end)
+                        highlightObjects[otherPlayer] = nil
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function clearESP()
+    for _, highlight in pairs(highlightObjects) do
+        pcall(function() highlight:Destroy() end)
+    end
+    highlightObjects = {}
+end
 
 local dragging = false
 local dragStart
@@ -1113,19 +1085,18 @@ espBtn.MouseButton1Click:Connect(function()
     animateButton(espBtn, espEnabled)
 end)
 
-killAllBtn.MouseButton1Click:Connect(function()
-    if killAllEnabled then
-        stopKillAll()
-        killAllBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
-        kaStroke.Color = Color3.fromRGB(180, 90, 255)
-        killAllBtn.Text = "  KILL ALL  OFF"
+instaKillBtn.MouseButton1Click:Connect(function()
+    instaKillEnabled = not instaKillEnabled
+    if instaKillEnabled then
+        instaKillBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
+        ikStroke.Color = Color3.fromRGB(0, 255, 80)
+        instaKillBtn.Text = "  AIM KLL  ON"
     else
-        startKillAll()
-        killAllBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-        kaStroke.Color = Color3.fromRGB(255, 255, 0)
-        killAllBtn.Text = "  KILL ALL  ON"
+        instaKillBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+        ikStroke.Color = Color3.fromRGB(180, 90, 255)
+        instaKillBtn.Text = "  AIM KILL  OFF"
     end
-    animateButton(killAllBtn, killAllEnabled)
+    animateButton(instaKillBtn, instaKillEnabled)
 end)
 
 Players.PlayerAdded:Connect(function()
@@ -1136,9 +1107,6 @@ Players.PlayerAdded:Connect(function()
     end
     if hitboxEnabled then
         updateHitboxPlayers()
-    end
-    if killAllEnabled then
-        updateRemoteCache()
     end
 end)
 
@@ -1244,9 +1212,6 @@ task.spawn(function()
     while true do
         if hitboxEnabled then
             updateHitboxPlayers()
-        end
-        if killAllEnabled then
-            updateRemoteCache()
         end
         task.wait(1)
     end
