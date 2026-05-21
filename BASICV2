@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Camera = workspace.CurrentCamera
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local isMobile = UIS.TouchEnabled
 local perfectShootEnabled = false
@@ -15,6 +16,234 @@ local autoShootEnabled = false
 local hitboxEnabled = false
 local hitboxSize = 5
 local instaKillEnabled = false
+
+local localTeamCache = nil
+local autoShootDelay = 0.3
+local lastTarget = nil
+local shootTime = 0
+
+local function getLocalTeam()
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return nil end
+    local main = playerGui:FindFirstChild("Main")
+    if not main then return nil end
+    local mainGameFrame = main:FindFirstChild("MainGameFrame")
+    if not mainGameFrame then return nil end
+    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
+    if not playersFrame then return nil end
+    
+    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
+    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
+    
+    if teamRed and teamRed:FindFirstChild(player.Name) then
+        return "Red"
+    elseif teamBlue and teamBlue:FindFirstChild(player.Name) then
+        return "Blue"
+    end
+    return nil
+end
+
+local function refreshLocalTeam()
+    localTeamCache = getLocalTeam()
+    return localTeamCache
+end
+
+local function isEnemy(targetPlayer)
+    if localTeamCache == nil then
+        refreshLocalTeam()
+    end
+    
+    if localTeamCache == nil then return true end
+    
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return true end
+    local main = playerGui:FindFirstChild("Main")
+    if not main then return true end
+    local mainGameFrame = main:FindFirstChild("MainGameFrame")
+    if not mainGameFrame then return true end
+    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
+    if not playersFrame then return true end
+    
+    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
+    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
+    
+    local targetName = targetPlayer.Name
+    
+    if localTeamCache == "Red" then
+        if teamBlue and teamBlue:FindFirstChild(targetName) then
+            return true
+        end
+        return false
+    elseif localTeamCache == "Blue" then
+        if teamRed and teamRed:FindFirstChild(targetName) then
+            return true
+        end
+        return false
+    end
+    
+    return true
+end
+
+local function getCurrentGun()
+    local char = player.Character
+    if not char then return nil end
+    for _, tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
+            return tool
+        end
+    end
+    return nil
+end
+
+local function isEnemyInFront(enemyChar)
+    local myChar = player.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChild("Head") then return false end
+    if not enemyChar or not enemyChar:FindFirstChild("HumanoidRootPart") then return false end
+    local myRoot = myChar.HumanoidRootPart
+    local enemyRoot = enemyChar.HumanoidRootPart
+    local directionToEnemy = (enemyRoot.Position - myRoot.Position).Unit
+    local lookDirection = Camera.CFrame.LookVector
+    local dot = directionToEnemy:Dot(lookDirection)
+    return dot > 0.1
+end
+
+local function getClosestEnemyInFront()
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local myRoot = char.HumanoidRootPart
+    local origin = char:FindFirstChild("Head") and char.Head.Position or myRoot.Position
+    local closest = nil
+    local bestDist = math.huge
+    for _, p in Players:GetPlayers() do
+        if p ~= player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 and isEnemy(p) then
+            local enemyChar = p.Character
+            local torso = enemyChar:FindFirstChild("HumanoidRootPart") or enemyChar:FindFirstChild("Torso") or enemyChar:FindFirstChild("UpperTorso")
+            if torso and isEnemyInFront(enemyChar) then
+                local dist = (torso.Position - myRoot.Position).Magnitude
+                if dist < bestDist then
+                    local dir = torso.Position - origin
+                    local params = RaycastParams.new()
+                    params.FilterDescendantsInstances = {char}
+                    params.FilterType = Enum.RaycastFilterType.Exclude
+                    local result = Workspace:Raycast(origin, dir * 1000, params)
+                    if not result or result.Instance:IsDescendantOf(enemyChar) then
+                        bestDist = dist
+                        closest = p
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function getClosestEnemyAnywhere()
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local myRoot = char.HumanoidRootPart
+    local closest = nil
+    local bestDist = math.huge
+    for _, p in Players:GetPlayers() do
+        if p ~= player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 and isEnemy(p) then
+            local enemyChar = p.Character
+            local torso = enemyChar:FindFirstChild("HumanoidRootPart") or enemyChar:FindFirstChild("Torso") or enemyChar:FindFirstChild("UpperTorso")
+            if torso then
+                local dist = (torso.Position - myRoot.Position).Magnitude
+                if dist < bestDist then
+                    bestDist = dist
+                    closest = p
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function perfectTorsoShot()
+    if not perfectShootEnabled then return end
+    local gun = getCurrentGun()
+    if not gun then return end
+    local target = getClosestEnemyInFront()
+    if not target or not target.Character then return end
+    local torso = target.Character:FindFirstChild("HumanoidRootPart") or target.Character:FindFirstChild("Torso") or target.Character:FindFirstChild("UpperTorso")
+    if not torso then return end
+    local handle = gun:FindFirstChild("Handle")
+    if not handle then return end
+    local barrel = gun:FindFirstChild("Barrel") or handle:FindFirstChild("Barrel") or handle:FindFirstChild("Muzzle") or handle:FindFirstChildWhichIsA("Attachment") or handle
+    local muzzlePos = barrel.Position
+    local targetPos = torso.Position
+    local fire = gun:FindFirstChild("fire")
+    if fire then pcall(function() fire:FireServer() end) end
+    local beam = gun:FindFirstChild("showBeam")
+    if beam then pcall(function() beam:FireServer(targetPos, muzzlePos, handle) end) end
+    local kill = gun:FindFirstChild("kill")
+    if kill then pcall(function() kill:FireServer(target) end) end
+end
+
+local function autoTorsoShoot()
+    if not autoShootEnabled then return end
+    
+    local gun = getCurrentGun()
+    if not gun then return end
+
+    local target = getClosestEnemyInFront()
+
+    if target and target.Character then
+        if not isEnemy(target) then return end
+        
+        if lastTarget ~= target then
+            lastTarget = target
+            shootTime = tick() + autoShootDelay
+        end
+
+        if tick() >= shootTime then
+            local torso = target.Character:FindFirstChild("HumanoidRootPart") or 
+                         target.Character:FindFirstChild("UpperTorso") or 
+                         target.Character:FindFirstChild("Torso")
+            if torso then
+                local handle = gun:FindFirstChild("Handle")
+                if handle then
+                    local barrel = gun:FindFirstChild("Barrel") or handle:FindFirstChild("Barrel") or 
+                                  handle:FindFirstChild("Muzzle") or handle:FindFirstChildWhichIsA("Attachment") or handle
+
+                    local fire = gun:FindFirstChild("fire")
+                    if fire then pcall(function() fire:FireServer() end) end
+                    local beam = gun:FindFirstChild("showBeam")
+                    if beam then pcall(function() beam:FireServer(torso.Position, barrel.Position, handle) end) end
+                    local kill = gun:FindFirstChild("kill")
+                    if kill then pcall(function() kill:FireServer(target) end) end
+
+                    shootTime = tick() + autoShootDelay
+                end
+            end
+        end
+    else
+        lastTarget = nil
+    end
+end
+
+local function connectGun(tool)
+    if tool:IsA("Tool") then
+        tool.Activated:Connect(function()
+            if perfectShootEnabled then
+                task.spawn(perfectTorsoShot)
+            end
+        end)
+    end
+end
+
+player.CharacterAdded:Connect(function(char)
+    char.ChildAdded:Connect(connectGun)
+    for _, tool in char:GetChildren() do
+        connectGun(tool)
+    end
+end)
+
+if player.Character then
+    for _, tool in player.Character:GetChildren() do
+        connectGun(tool)
+    end
+end
 
 task.spawn(function()
     while true do
@@ -51,12 +280,8 @@ task.spawn(function()
         task.wait(0.0001)
     end
 end)
-local mt = nil
-local oldIndex = nil
+
 local highlightObjects = {}
-local autoShootLastTime = 0
-local autoShootDelay = 0.05
-local localTeamCache = nil
 local affectedPlayers = {}
 local originalHitboxSizes = {}
 
@@ -382,7 +607,7 @@ local function createToggle(text, yPos)
     return btn, stroke
 end
 
-local perfectShootBtn, psStroke = createToggle("PERFECT SHOOT", 95)
+local perfectShootBtn, psStroke = createToggle("SILENT AIM", 95)
 local autoShootBtn, asStroke = createToggle("AUTO SHOOT", 132)
 local espBtn, espStroke = createToggle("CHAMS ESP", 169)
 local instaKillBtn, ikStroke = createToggle("AIM KILL", 206)
@@ -532,8 +757,7 @@ local function updateHitboxPlayers()
         if not v.Parent or not v.Character or not v.Character:FindFirstChild("HumanoidRootPart") then
             if hitboxEnabled then
                 restoreOriginalHitbox(v)
-            end
-            table.remove(affectedPlayers, i)
+            end            table.remove(affectedPlayers, i)
         end
     end
 end
@@ -653,241 +877,6 @@ UIS.InputEnded:Connect(function(input)
         menuDragging = false
     end
 end)
-
-local function getLocalTeam()
-    local playerGui = player:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return nil end
-    local main = playerGui:FindFirstChild("Main")
-    if not main then return nil end
-    local mainGameFrame = main:FindFirstChild("MainGameFrame")
-    if not mainGameFrame then return nil end
-    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
-    if not playersFrame then return nil end
-    
-    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
-    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
-    
-    if teamRed and teamRed:FindFirstChild(player.Name) then
-        return "Red"
-    elseif teamBlue and teamBlue:FindFirstChild(player.Name) then
-        return "Blue"
-    end
-    return nil
-end
-
-local function refreshLocalTeam()
-    localTeamCache = getLocalTeam()
-    return localTeamCache
-end
-
-local function isEnemy(targetPlayer)
-    if localTeamCache == nil then
-        refreshLocalTeam()
-    end
-    
-    if localTeamCache == nil then return false end
-    
-    local playerGui = player:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return false end
-    local main = playerGui:FindFirstChild("Main")
-    if not main then return false end
-    local mainGameFrame = main:FindFirstChild("MainGameFrame")
-    if not mainGameFrame then return false end
-    local playersFrame = mainGameFrame:FindFirstChild("PlayersFrame")
-    if not playersFrame then return false end
-    
-    local teamRed = playersFrame:FindFirstChild("TeamRedFrame")
-    local teamBlue = playersFrame:FindFirstChild("TeamBlueFrame")
-    
-    local targetName = targetPlayer.Name
-    
-    if localTeamCache == "Red" then
-        if teamBlue and teamBlue:FindFirstChild(targetName) then
-            return true
-        end
-    elseif localTeamCache == "Blue" then
-        if teamRed and teamRed:FindFirstChild(targetName) then
-            return true
-        end
-    end
-    
-    return false
-end
-
-local function isEnemyVisible(targetPart)
-    local character = player.Character
-    if not character then return false end
-    
-    local originPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-    if not originPart then return false end
-    
-    local direction = (targetPart.Position - originPart.Position).Unit
-    local distance = (targetPart.Position - originPart.Position).Magnitude
-    
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {character}
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    
-    local result = workspace:Raycast(originPart.Position, direction * distance, raycastParams)
-    
-    if result then
-        return result.Instance:IsDescendantOf(targetPart.Parent)
-    end
-    return false
-end
-
-local function getScreenCenter()
-    local viewportSize = Camera.ViewportSize
-    return Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-end
-
-local function getBestTarget()
-    local bestTarget = nil
-    local shortestDistance = math.huge
-    local center = getScreenCenter()
-    
-    for _, v in pairs(Players:GetPlayers()) do
-        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-            local humanoid = v.Character:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 and isEnemy(v) then
-                local targetPart = v.Character.HumanoidRootPart
-                local pos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                
-                if onScreen and isEnemyVisible(targetPart) then
-                    local distance = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                    if distance < shortestDistance then
-                        bestTarget = targetPart
-                        shortestDistance = distance
-                    end
-                end
-            end
-        end
-    end
-    return bestTarget
-end
-
-local function getNearestVisibleEnemy()
-    local nearest = nil
-    local shortestDistance = math.huge
-    local character = player.Character
-    if not character then return nil end
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return nil end
-    
-    for _, v in pairs(Players:GetPlayers()) do
-        if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-            local humanoid = v.Character:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 and isEnemy(v) then
-                local targetRoot = v.Character.HumanoidRootPart
-                local distance = (targetRoot.Position - rootPart.Position).Magnitude
-                if distance < shortestDistance and isEnemyVisible(targetRoot) then
-                    nearest = v
-                    shortestDistance = distance
-                end
-            end
-        end
-    end
-    return nearest
-end
-
-local function getCurrentWeapon()
-    local character = player.Character
-    if not character then return nil end
-    for _, child in ipairs(character:GetChildren()) do
-        if child:IsA("Tool") and child:FindFirstChild("fire") then
-            return child
-        end
-    end
-    return nil
-end
-
-local function shootAtEnemy(enemy)
-    if not enemy or not enemy.Character then return false end
-    local weapon = getCurrentWeapon()
-    if not weapon then return false end
-    
-    local targetPart = enemy.Character:FindFirstChild("HumanoidRootPart") or enemy.Character:FindFirstChild("Head")
-    if not targetPart then return false end
-    if not isEnemyVisible(targetPart) then return false end
-    
-    local character = player.Character
-    if not character then return false end
-    
-    local myPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-    if not myPart then return false end
-    
-    local direction = (targetPart.Position - myPart.Position).Unit
-    
-    pcall(function()
-        if weapon:FindFirstChild("fire") then
-            weapon.fire:FireServer()
-        end
-        local killRemote = weapon:FindFirstChild("kill")
-        if killRemote then
-            killRemote:FireServer(enemy, direction, targetPart.Position)
-        end
-    end)
-    
-    return true
-end
-
-local function autoShootLoop()
-    while autoShootEnabled do
-        local now = tick()
-        if now - autoShootLastTime >= autoShootDelay then
-            local nearestEnemy = getNearestVisibleEnemy()
-            if nearestEnemy then
-                if shootAtEnemy(nearestEnemy) then
-                    autoShootLastTime = now
-                end
-            end
-        end
-        RunService.Heartbeat:Wait()
-    end
-end
-
-local function enableAutoShoot()
-    autoShootEnabled = true
-    autoShootLastTime = 0
-    task.spawn(autoShootLoop)
-end
-
-local function disableAutoShoot()
-    autoShootEnabled = false
-end
-
-local function enablePerfectShoot()
-    if mt then return end
-    mt = getrawmetatable(game)
-    oldIndex = mt.__index
-    setreadonly(mt, false)
-    mt.__index = newcclosure(function(self, index)
-        if index == "Hit" or index == "Target" then
-            local targetPart = getBestTarget()
-            if targetPart and targetPart.Parent and targetPart.Parent:FindFirstChild("Humanoid") then
-                local humanoid = targetPart.Parent.Humanoid
-                if humanoid.Health > 0 then
-                    if index == "Hit" then
-                        return targetPart.CFrame
-                    else
-                        return targetPart
-                    end
-                end
-            end
-        end
-        return oldIndex(self, index)
-    end)
-    setreadonly(mt, true)
-end
-
-local function disablePerfectShoot()
-    if mt then
-        setreadonly(mt, false)
-        mt.__index = oldIndex
-        setreadonly(mt, true)
-        mt = nil
-    end
-end
 
 local function updateESP()
     if not espEnabled then return end
@@ -1041,29 +1030,27 @@ perfectShootBtn.MouseButton1Click:Connect(function()
     if perfectShootEnabled then
         perfectShootBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
         psStroke.Color = Color3.fromRGB(0, 255, 80)
-        perfectShootBtn.Text = "  PERFECT SHOOT  ON"
-        enablePerfectShoot()
+        perfectShootBtn.Text = "  SILENT AIM ON"
     else
         perfectShootBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
         psStroke.Color = Color3.fromRGB(180, 90, 255)
-        perfectShootBtn.Text = "  PERFECT SHOOT  OFF"
-        disablePerfectShoot()
+        perfectShootBtn.Text = "  SILENT AIM OFF"
     end
     animateButton(perfectShootBtn, perfectShootEnabled)
 end)
 
 autoShootBtn.MouseButton1Click:Connect(function()
+    autoShootEnabled = not autoShootEnabled
     if autoShootEnabled then
-        autoShootEnabled = false
-        autoShootBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
-        asStroke.Color = Color3.fromRGB(180, 90, 255)
-        autoShootBtn.Text = "  AUTO SHOOT  OFF"
-    else
-        autoShootEnabled = true
         autoShootBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
         asStroke.Color = Color3.fromRGB(0, 255, 80)
         autoShootBtn.Text = "  AUTO SHOOT  ON"
-        task.spawn(autoShootLoop)
+    else
+        autoShootEnabled = false
+        autoShootBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
+        asStroke.Color = Color3.fromRGB(180, 90, 255)
+        autoShootBtn.Text = "  AUTO SHOOT OFF"
+        lastTarget = nil
     end
     animateButton(autoShootBtn, autoShootEnabled)
 end)
@@ -1090,13 +1077,19 @@ instaKillBtn.MouseButton1Click:Connect(function()
     if instaKillEnabled then
         instaKillBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 50)
         ikStroke.Color = Color3.fromRGB(0, 255, 80)
-        instaKillBtn.Text = "  AIM KLL  ON"
+        instaKillBtn.Text = "  AIM KILL  ON"
     else
         instaKillBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 140)
         ikStroke.Color = Color3.fromRGB(180, 90, 255)
         instaKillBtn.Text = "  AIM KILL  OFF"
     end
     animateButton(instaKillBtn, instaKillEnabled)
+end)
+
+RunService.Heartbeat:Connect(function()
+    if autoShootEnabled then
+        pcall(autoTorsoShoot)
+    end
 end)
 
 Players.PlayerAdded:Connect(function()
@@ -1124,6 +1117,9 @@ Players.PlayerRemoving:Connect(function(p)
                 break
             end
         end
+    end
+    if lastTarget == p then
+        lastTarget = nil
     end
 end)
 
